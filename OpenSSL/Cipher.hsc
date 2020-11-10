@@ -16,9 +16,6 @@ module OpenSSL.Cipher
     , AESCtx
     , newAESCtx
     , aesCBC
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-    , aesCTR
-#endif
     )
     where
 #include "HsOpenSSL.h"
@@ -98,28 +95,3 @@ aesCBC (AESCtx ctx iv _ _ mode) input = do
     BS.useAsCStringLen input $ \(ptr, len) ->
     BSI.create (BS.length input) $ \out ->
     _AES_cbc_encrypt ptr out (fromIntegral len) ctxPtr ivPtr $ modeToInt mode
-
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
--- seems that AES_ctr128_encrypt was removed in recent OpenSSL versions
-foreign import ccall unsafe "AES_ctr128_encrypt"
-        _AES_ctr_encrypt :: Ptr CChar -> Ptr Word8 -> CULong -> Ptr AES_KEY -> Ptr CUChar -> Ptr CUChar -> Ptr CUInt -> IO ()
-
--- | Encrypt some number of bytes using CTR mode. This is an IO function
---   because the context is destructivly updated.
-aesCTR :: AESCtx  -- ^ context
-       -> BS.ByteString  -- ^ input, any number of bytes
-       -> IO BS.ByteString
-aesCTR (AESCtx _   _  _        _    Decrypt) _     = fail "the context mode must be Encrypt"
-aesCTR (AESCtx ctx iv ecounter nref Encrypt) input =
-  withForeignPtr ctx $ \ctxPtr ->
-    withForeignPtr iv $ \ivPtr ->
-    withForeignPtr ecounter $ \ecptr ->
-    BS.useAsCStringLen input $ \(ptr, len) ->
-    BSI.create (BS.length input) $ \out ->
-    alloca $ \nptr -> do
-      n <- readIORef nref
-      poke nptr n
-      _AES_ctr_encrypt ptr out (fromIntegral len) ctxPtr ivPtr ecptr nptr
-      n' <- peek nptr
-      writeIORef nref n'
-#endif
